@@ -62,12 +62,17 @@ def scrape_floor_sheet():
         print("\nTable found! Extracting data...")
         
         # Extract headers
-        headers = []
-        thead = table.find('thead')
-        if thead:
-            for th in thead.find_all('th'):
-                header = th.text.strip().replace(' \xa0', '')
-                headers.append(header)
+        headers = [
+            "Symbol",
+            "LTP",
+            "% Change",
+            "Open",
+            "High",
+            "Low",
+            "Qty.",
+            "PClose",
+            "Diff."
+        ]
         
         print(f"Extracted headers: {headers}")
         
@@ -109,3 +114,4 @@ if __name__ == "__main__":
     urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
     
     scrape_floor_sheet()
+#suman tested
