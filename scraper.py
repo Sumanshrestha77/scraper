@@ -14,7 +14,12 @@ def scrape_floor_sheet():
     }
     
     try:
+        # Add 10 second delay before fetching
+        print("Waiting for 10 seconds before fetching data...")
+        time.sleep(10)
+        
         # Send GET request to the URL with verify=False
+        print("Fetching data from the website...")
         response = requests.get(url, headers=headers, verify=False)
         response.raise_for_status()
         
@@ -84,6 +89,5 @@ if __name__ == "__main__":
     import urllib3
     urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
     
-    # Add a small delay to be respectful to the server
-    time.sleep(1)
+    print("Starting the scraper...")
     scrape_floor_sheet()
