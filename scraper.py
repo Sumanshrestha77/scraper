@@ -13,11 +13,11 @@ def scrape_floor_sheet():
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
     }
     time.sleep(10)
-    print('sleeping for 10 sec')
+    print('trying to sleep 10 sec')
     
     try:
-        # Send GET request to the URL
-        response = requests.get(url, headers=headers)
+        # Send GET request to the URL with verify=False to bypass SSL verification
+        response = requests.get(url, headers=headers, verify=False)
         response.raise_for_status()  # Raise an exception for bad status codes
         
         # Parse the HTML content
@@ -64,6 +64,10 @@ def scrape_floor_sheet():
         print(f"An unexpected error occurred: {e}")
 
 if __name__ == "__main__":
+    # Suppress SSL verification warnings
+    import urllib3
+    urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+    
     # Add a small delay to be respectful to the server
     time.sleep(1)
     scrape_floor_sheet()
