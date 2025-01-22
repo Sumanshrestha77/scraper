@@ -18,70 +18,45 @@ def scrape_floor_sheet():
         response = requests.get(url, headers=headers, verify=False)
         response.raise_for_status()
         
-        # Print the response status and content length for debugging
-        print(f"Response status: {response.status_code}")
-        print(f"Content length: {len(response.text)}")
-        
         # Parse the HTML content
         soup = BeautifulSoup(response.text, 'html.parser')
         
-        # Try different methods to find the table
-        table = None
-        
-        # Method 1: Try finding any table
-        table = soup.find('table')
-        
-        if not table:
-            print("No table found in the page.")
-            # Print the entire HTML for debugging
-            print("Page HTML:")
-            print(response.text[:1000])  # Print first 1000 characters
+        # First find the div with class table-responsive
+        table_div = soup.find('div', class_='table-responsive')
+        if not table_div:
+            print("Table container div not found")
             return
-        
-        # Print table HTML for debugging
-        print("\nFound table HTML:")
-        print(table.prettify()[:500])  # Print first 500 characters of table
+            
+        # Then find the table inside this div
+        table = table_div.find('table')
+        if not table:
+            print("Table not found inside the container")
+            return
         
         # Extract headers
         headers = []
         thead = table.find('thead')
         if thead:
             for th in thead.find_all('th'):
+                # Get the text without the icon
                 header = th.text.strip().replace(' \xa0', '')
                 headers.append(header)
-        
-        # If no headers found, try getting from first row
-        if not headers:
-            first_row = table.find('tr')
-            if first_row:
-                headers = [td.text.strip() for td in first_row.find_all(['th', 'td'])]
-        
-        print("\nExtracted headers:", headers)
         
         # Extract rows
         rows = []
         tbody = table.find('tbody')
         if tbody:
             for tr in tbody.find_all('tr'):
-                row = [td.text.strip() for td in tr.find_all('td')]
+                row = []
+                for td in tr.find_all('td'):
+                    # Get the title attribute if it exists, otherwise get the text
+                    value = td.get('title', td.text.strip())
+                    row.append(value)
                 if row:  # Only add non-empty rows
                     rows.append(row)
-        else:
-            # If no tbody, get all rows except first (headers)
-            all_rows = table.find_all('tr')[1:]  # Skip header row
-            for tr in all_rows:
-                row = [td.text.strip() for td in tr.find_all('td')]
-                if row:  # Only add non-empty rows
-                    rows.append(row)
-        
-        print(f"\nExtracted {len(rows)} rows")
-        
-        if not rows:
-            print("No data rows found in the table")
-            return
         
         # Create DataFrame
-        df = pd.DataFrame(rows, columns=headers if headers else None)
+        df = pd.DataFrame(rows, columns=headers)
         
         # Generate filename with current timestamp
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
@@ -89,7 +64,7 @@ def scrape_floor_sheet():
         
         # Save to CSV
         df.to_csv(filename, index=False)
-        print(f"\nData successfully saved to {filename}")
+        print(f"Data successfully saved to {filename}")
         
         # Print first few rows for verification
         print("\nFirst few rows of data:")
