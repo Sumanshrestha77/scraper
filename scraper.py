@@ -6,7 +6,7 @@ from datetime import datetime
 
 def scrape_floor_sheet():
     # URL of the floor sheet
-    url = "https://merolagani.com/Floorsheet.aspx"
+    url = "https://merolagani.com/LatestMarket.aspx"
     
     # Headers to mimic a browser request
     headers = {
@@ -45,7 +45,7 @@ def scrape_floor_sheet():
             print(f"Table {i+1} classes: {t.get('class', 'No class')}")
         
         # Try to find the specific table
-        table = soup.find('table', class_='table table-bordered table-striped table-hover sortable')
+        table = soup.find('table', class_='table table-hover live-trading sortable')
         
         if not table:
             print("\nTable not found with specific class. Trying alternative approaches...")
