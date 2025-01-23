@@ -63,14 +63,15 @@ class NepseTmsScraper:
         login_url = "https://tms55.nepsetms.com.np/"
         
         try:
-            print('waiting for 5 sectoind')
+            print('waiting for 10 sectoind')
             time.sleep(5)
             # First, get the login page to fetch any necessary tokens or cookies
             response = self.session.get(login_url, headers=self.headers, verify=False)
             
             # Parse the page to find captcha image
             soup = BeautifulSoup(response.text, 'html.parser')
-            
+
+            time.sleep(3)
             # Find captcha image URL (this might need adjustment)
             captcha_img = soup.find('img', class_='captcha-image-dimension')
             if not captcha_img:
