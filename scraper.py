@@ -2,101 +2,104 @@ from playwright.sync_api import sync_playwright
 import pandas as pd
 from datetime import datetime
 import time
+import re
 
 def scrape_floor_sheet():
-    print("Starting Playwright scraping...")
+    url = "https://nepalstock.com/live-market"
+    print("Starting scraper with Playwright...")
     
-    with sync_playwright() as p:
-        try:
-            print("Launching browser in headless mode...")
-            browser = p.chromium.launch(headless=True)
-            page = browser.new_page()
+    try:
+        with sync_playwright() as p:
+            print("Launching browser...")
+            browser = p.chromium.launch(
+                headless=True, 
+                args=[
+                    '--no-sandbox',
+                    '--disable-setuid-sandbox',
+                    '--disable-dev-shm-usage'
+                ]
+            )
             
-            print("Navigating to NEPSE live market page...")
-            page.goto('https://nepalstock.com/live-market')
+            print("Creating new browser context...")
+            context = browser.new_context(
+                # Add headers to mimic a real browser
+                extra_http_headers={
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+                    'Accept-Language': 'en-US,en;q=0.9',
+                    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8'
+                }
+            )
             
-            print("Waiting for table to load...")
-            page.wait_for_selector('table', timeout=30000)
+            page = context.new_page()
             
-            # Wait for page to stabilize and potentially reload
-            print("Waiting 30 seconds for dynamic content to update...")
-            time.sleep(30)
+            # Configure page to handle potential network issues
+            page.set_default_timeout(30000)
             
-            # Refresh page to get latest data
-            page.reload()
-            print("Page reloaded. Waiting for table to stabilize...")
-            page.wait_for_selector('table', timeout=30000)
-            time.sleep(5)
-            
-            # Extract table data
-            print("Extracting table rows...")
-            table_rows = page.query_selector_all('table tr')
-            
-            headers = ["SN", "Symbol", "LTP", "LTV", "Point Change", 
-                       "% Change", "Open Price", "High Price", "Low Price", 
-                       "Avg Traded Price", "Volume", "Previous Closing"]
-            
-            rows = []
-            print(f"Total rows found: {len(table_rows)}")
-            
-            for row in table_rows[1:]:  # Skip header
-                cells = row.query_selector_all('td')
-                row_data = [cell.inner_text().strip() for cell in cells]
+            print("Navigating to the page...")
+            try:
+                response = page.goto(url, wait_until='networkidle')
                 
-                # Validate row data
-                if len(row_data) == len(headers):
-                    rows.append(row_data)
-                else:
-                    print(f"Skipping row with incorrect data length: {row_data}")
-            
-            print(f"Valid rows extracted: {len(rows)}")
-            
-            # Close browser
-            browser.close()
-            
-            # Deduplication logic
-            def load_previous_data():
-                try:
-                    return pd.read_csv('latest_nepse_data.csv')
-                except FileNotFoundError:
-                    return pd.DataFrame()
-            
-            # Create DataFrame
-            df = pd.DataFrame(rows, columns=headers)
-            
-            # Load previous data
-            previous_df = load_previous_data()
-            
-            # Remove duplicate rows based on all columns
-            if not previous_df.empty:
-                df = df[~df.apply(tuple, axis=1).isin(previous_df.apply(tuple, axis=1))]
-            
-            # Only save if new data exists
-            if not df.empty:
-                # Append to existing data
-                combined_df = pd.concat([previous_df, df], ignore_index=True)
+                # Check response status
+                if response and response.status != 200:
+                    print(f"Warning: Received status code {response.status}")
                 
-                # Save latest complete dataset
-                combined_df.to_csv('latest_nepse_data.csv', index=False)
+                # Wait for potential overlays or popups
+                page.wait_for_timeout(5000)
                 
-                # Save just the new data
+                # Check if table is present
+                print("Checking for table...")
+                table_selector = 'table.table.table__border.table__lg.table-striped.table__border--bottom.table-head-fixed'
+                
+                # Multiple attempts to find the table
+                for attempt in range(3):
+                    try:
+                        page.wait_for_selector(table_selector, timeout=10000)
+                        break
+                    except Exception as wait_err:
+                        print(f"Attempt {attempt + 1} failed to find table: {wait_err}")
+                        page.reload()
+                        page.wait_for_timeout(3000)
+                
+                # Extract headers
+                headers_elements = page.query_selector_all('thead tr th')
+                headers = [header.inner_text().strip() for header in headers_elements]
+                print(f"Extracted headers: {headers}")
+                
+                # Extract table rows
+                rows = page.query_selector_all('table.table.table__border.table__lg.table-striped.table__border--bottom.table-head-fixed tbody tr')
+                
+                data = []
+                for row in rows:
+                    cells = row.query_selector_all('td')
+                    row_data = [cell.inner_text().strip() for cell in cells]
+                    
+                    # Validate row data matches headers
+                    if len(row_data) == len(headers):
+                        data.append(row_data)
+                    else:
+                        print(f"Skipping row with mismatched length: {row_data}")
+                
+                # Close browser
+                browser.close()
+                
+                # Save data to DataFrame
+                df = pd.DataFrame(data, columns=headers)
+                
+                # Save to CSV
                 timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-                new_filename = f'nepse_new_data_{timestamp}.csv'
-                df.to_csv(new_filename, index=False)
+                filename = f'nepse_floor_sheet_{timestamp}.csv'
+                df.to_csv(filename, index=False)
                 
-                print(f"New data saved. Total new rows: {len(df)}")
-                print(f"Complete dataset updated.")
-                print(f"New data saved to: {new_filename}")
-            else:
-                print("No new data found.")
+                print(f"Data successfully saved to {filename}")
+                return df
             
-            return df
-        
-        except Exception as e:
-            print(f"An error occurred: {e}")
-            import traceback
-            traceback.print_exc()
-            return None
+            except Exception as nav_err:
+                print(f"Navigation error: {nav_err}")
+                return None
+    
+    except Exception as e:
+        print(f"Unexpected error: {e}")
+        return None
 
 if __name__ == "__main__":
     scrape_floor_sheet()
