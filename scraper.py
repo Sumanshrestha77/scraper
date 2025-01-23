@@ -20,38 +20,24 @@ def scrape_live_market():
     try:
         # Send GET request to the URL
         response = requests.get(url, headers=headers)
-        response.raise_for_status()  # Raise an exception for HTTP errors
-        
-        # Print response status
-        print(f"Response Status: {response.status_code}")
-        
-        # Save the raw HTML for inspection (optional for debugging)
-        with open('debug_live_market.html', 'w', encoding='utf-8') as f:
-            f.write(response.text)
-        print("Saved raw HTML to debug_live_market.html")
+        response.raise_for_status()
         
         # Parse the HTML content
         soup = BeautifulSoup(response.text, 'html.parser')
         
-        # Find the table with the class provided
+        # Find the table with the specified class
         table = soup.find('table', class_='table table__border table__lg table-striped table__border--bottom table-head-fixed')
         
         if not table:
-            print("\nTable not found. The page might use JavaScript to load data.")
-            print("Consider using Selenium or checking for an API endpoint.")
+            print("Table not found with the specified class.")
             return
-        
-        print("\nTable found! Extracting data...")
         
         # Extract headers
         headers = []
         thead = table.find('thead')
         if thead:
             for th in thead.find_all('th'):
-                header = th.text.strip()
-                headers.append(header)
-        
-        print(f"Extracted headers: {headers}")
+                headers.append(th.text.strip())
         
         # Extract rows
         rows = []
@@ -60,8 +46,6 @@ def scrape_live_market():
             for tr in tbody.find_all('tr'):
                 row = [td.text.strip() for td in tr.find_all('td')]
                 rows.append(row)
-        
-        print(f"Extracted {len(rows)} rows")
         
         # Create DataFrame
         df = pd.DataFrame(rows, columns=headers)
@@ -72,16 +56,12 @@ def scrape_live_market():
         
         # Save to CSV
         df.to_csv(filename, index=False)
-        print(f"\nData successfully saved to {filename}")
+        print(f"Data successfully saved to {filename}")
         
         return df
     
-    except requests.exceptions.RequestException as e:
-        print(f"Error occurred while fetching the data: {e}")
     except Exception as e:
-        print(f"An unexpected error occurred: {e}")
-        import traceback
-        print(traceback.format_exc())
+        print(f"An error occurred: {e}")
 
 if __name__ == "__main__":
     scrape_live_market()
