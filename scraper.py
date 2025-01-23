@@ -7,13 +7,10 @@ import os
 import signal
 import sys
 import json
-import urllib3
+import re
 
 class NepseScraper:
     def __init__(self, output_dir='scrape_outputs'):
-        # Suppress SSL warnings
-        urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
-        
         # Create output directory if it doesn't exist
         self.output_dir = output_dir
         os.makedirs(output_dir, exist_ok=True)
@@ -21,13 +18,19 @@ class NepseScraper:
         # Track previously scraped data to avoid duplicates
         self.previous_data = None
         
-        # Headers to mimic a browser request
+        # Comprehensive headers to mimic a full browser request
         self.headers = {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
-            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-            'Accept-Language': 'en-US,en;q=0.5',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.9',
+            'Accept-Language': 'en-US,en;q=0.9',
+            'Accept-Encoding': 'gzip, deflate, br',
             'Connection': 'keep-alive',
             'Upgrade-Insecure-Requests': '1',
+            'Sec-Fetch-Dest': 'document',
+            'Sec-Fetch-Mode': 'navigate',
+            'Sec-Fetch-Site': 'none',
+            'Sec-Fetch-User': '?1',
+            'Cache-Control': 'max-age=0',
         }
         
         # Signal handler for graceful exit
@@ -41,32 +44,50 @@ class NepseScraper:
         url = "https://nepalstock.com/live-market"
         
         try:
-            # First, add a longer initial wait time for page loading
+            # Increase wait time for potential dynamic loading
             print('Waiting for page to load...')
             time.sleep(10)
             
-            # Send GET request to the URL
-            response = requests.get(url, headers=self.headers, verify=False)
+            # Send GET request with comprehensive headers
+            response = requests.get(
+                url, 
+                headers=self.headers, 
+                verify=False,
+                # Add these parameters to potentially bypass restrictions
+                allow_redirects=True,
+                timeout=30
+            )
             response.raise_for_status()
             
             # Debug: Save raw HTML for inspection
             with open('debug_response.html', 'w', encoding='utf-8') as f:
                 f.write(response.text)
             
-            # Parse the HTML content
+            # Debug: Print response details
+            print(f"Response Status: {response.status_code}")
+            print(f"Response Length: {len(response.text)}")
+            
+            # Try multiple approaches to find the table
+            
+            # Approach 1: Flexible class matching
             soup = BeautifulSoup(response.text, 'html.parser')
             
-            # Find the table with multiple potential class variations
-            table = soup.find('table', class_=lambda x: x and 'table' in x and 'table__border' in x)
+            # Find tables with classes containing both 'table' and 'table__border'
+            tables = soup.find_all('table', class_=lambda x: x and 'table' in x and 'table__border' in x)
             
-            if not table:
-                print("Table not found. Checking table classes...")
-                tables = soup.find_all('table')
-                for i, t in enumerate(tables):
+            print(f"\nFound {len(tables)} potential tables")
+            
+            # If no tables found, print all table classes for debugging
+            if not tables:
+                all_tables = soup.find_all('table')
+                for i, t in enumerate(all_tables):
                     print(f"Table {i+1} classes: {t.get('class', 'No class')}")
                 return None
             
-            # Updated headers based on the new table structure
+            # Select the first matching table
+            table = tables[0]
+            
+            # Updated headers based on the table structure
             headers = [
                 "SN", "Symbol", "LTP", "LTV", "Point Change", 
                 "% Change", "Open Price", "High Price", "Low Price", 
@@ -137,6 +158,7 @@ class NepseScraper:
 
 if __name__ == "__main__":
     # Suppress SSL verification warnings
+    import urllib3
     urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
     
     # Initialize scraper and start continuous scraping
