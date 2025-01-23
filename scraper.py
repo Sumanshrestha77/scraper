@@ -63,6 +63,8 @@ class NepseTmsScraper:
         login_url = "https://tms55.nepsetms.com.np/"
         
         try:
+            print('waiting for 5 sectoind')
+            time.sleep(5)
             # First, get the login page to fetch any necessary tokens or cookies
             response = self.session.get(login_url, headers=self.headers, verify=False)
             
