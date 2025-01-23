@@ -3,115 +3,127 @@ from bs4 import BeautifulSoup
 import pandas as pd
 import time
 from datetime import datetime
+import os
+import signal
+import sys
 
-def scrape_floor_sheet():
-    # URL of the floor sheet
-    url = "https://merolagani.com/LatestMarket.aspx"
-    
-    # Headers to mimic a browser request
-    headers = {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
-        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-        'Accept-Language': 'en-US,en;q=0.5',
-        'Connection': 'keep-alive',
-        'Upgrade-Insecure-Requests': '1',
-    }
-    
-    print('Sleeping for 10 seconds...')
-    time.sleep(10)
-    print('Sleep completed, fetching data...')
-    
-    try:
-        # Send GET request to the URL with verify=False
-        response = requests.get(url, headers=headers, verify=False)
-        response.raise_for_status()
+class NepseScraper:
+    def __init__(self, output_dir='scrape_outputs'):
+        # Create output directory if it doesn't exist
+        self.output_dir = output_dir
+        os.makedirs(output_dir, exist_ok=True)
         
-        # Print response status and length
-        print(f"Response Status: {response.status_code}")
-        print(f"Response Length: {len(response.text)}")
+        # Track previously scraped data to avoid duplicates
+        self.previous_data = None
         
-        # Save the raw HTML for inspection
-        with open('debug_response.html', 'w', encoding='utf-8') as f:
-            f.write(response.text)
-        print("Saved raw HTML to debug_response.html")
+        # Headers to mimic a browser request
+        self.headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+            'Accept-Language': 'en-US,en;q=0.5',
+            'Connection': 'keep-alive',
+            'Upgrade-Insecure-Requests': '1',
+        }
         
-        # Parse the HTML content
-        soup = BeautifulSoup(response.text, 'html.parser')
+        # Signal handler for graceful exit
+        signal.signal(signal.SIGINT, self.signal_handler)
+
+    def signal_handler(self, signum, frame):
+        print("\nScraping stopped by user. Exiting...")
+        sys.exit(0)
+
+    def scrape_floor_sheet(self):
+        url = "https://nepalstock.com/live-market"
         
-        # Print all table classes found
-        tables = soup.find_all('table')
-        print(f"\nFound {len(tables)} tables on the page")
-        for i, t in enumerate(tables):
-            print(f"Table {i+1} classes: {t.get('class', 'No class')}")
-        
-        # Try to find the specific table
-        table = soup.find('table', class_='table table-hover live-trading sortable')
-        
-        if not table:
-            print("\nTable not found with specific class. Trying alternative approaches...")
+        try:
+            # Send GET request to the URL with verify=False
+            response = requests.get(url, headers=self.headers, verify=False)
+            response.raise_for_status()
             
-            # Try finding by partial class match
-            table = soup.find('table', class_='table')
+            # Parse the HTML content
+            soup = BeautifulSoup(response.text, 'html.parser')
+            
+            # Find the table with the updated header structure
+            table = soup.find('table', class_='table table__border table__lg table-striped table__border--bottom table-head-fixed')
             
             if not table:
-                print("Still no table found. The page might be using JavaScript to load data.")
-                print("\nThis website might be using JavaScript to load the table dynamically.")
-                print("You might need to use Selenium or Playwright instead of requests.")
-                return
+                print("Table not found. Skipping this iteration.")
+                return None
+            
+            # Updated headers based on the new table structure
+            headers = [
+                "SN", "Symbol", "LTP", "LTV", "Point Change", 
+                "% Change", "Open Price", "High Price", "Low Price", 
+                "Avg Traded Price", "Volume", "Previous Closing"
+            ]
+            
+            # Extract rows
+            rows = []
+            tbody = table.find('tbody')
+            if tbody:
+                for tr in tbody.find_all('tr'):
+                    row = []
+                    for td in tr.find_all('td'):
+                        row.append(td.text.strip())
+                    rows.append(row)
+            
+            # Create DataFrame
+            df = pd.DataFrame(rows, columns=headers)
+            
+            # Check for new data
+            if self.previous_data is not None:
+                # Find new rows by comparing with previous scrape
+                df = self.find_new_rows(df)
+            
+            # Update previous data
+            self.previous_data = df
+            
+            if not df.empty:
+                # Generate filename with current timestamp
+                timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+                filename = os.path.join(self.output_dir, f'nepse_floor_sheet_{timestamp}.csv')
+                
+                # Save to CSV
+                df.to_csv(filename, index=False)
+                print(f"New data saved to {filename}")
+                
+                return df
+            else:
+                print("No new data found in this iteration.")
+                return None
+            
+        except requests.exceptions.RequestException as e:
+            print(f"Error occurred while fetching the data: {e}")
+        except Exception as e:
+            print(f"An unexpected error occurred: {e}")
+            import traceback
+            print(traceback.format_exc())
+
+    def find_new_rows(self, current_df):
+        # Compare current dataframe with previous dataframe
+        if self.previous_data is None:
+            return current_df
         
-        print("\nTable found! Extracting data...")
+        # Remove any rows that exactly match previous data
+        new_df = current_df[~current_df.apply(tuple, axis=1).isin(self.previous_data.apply(tuple, axis=1))]
         
-        # Extract headers
-        headers = [
-            "Symbol",
-            "LTP",
-            "% Change",
-            "Open",
-            "High",
-            "Low",
-            "Qty.",
-            "PClose",
-            "Diff."
-        ]
+        return new_df
+
+    def continuous_scrape(self, interval=30):
+        print(f"Starting continuous scraping. Interval: {interval} seconds. Press Ctrl+C to stop.")
         
-        print(f"Extracted headers: {headers}")
-        
-        # Extract rows
-        rows = []
-        tbody = table.find('tbody')
-        if tbody:
-            for tr in tbody.find_all('tr'):
-                row = []
-                for td in tr.find_all('td'):
-                    row.append(td.text.strip())
-                rows.append(row)
-        
-        print(f"Extracted {len(rows)} rows")
-        
-        # Create DataFrame
-        df = pd.DataFrame(rows, columns=headers)
-        
-        # Generate filename with current timestamp
-        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-        filename = f'nepse_floor_sheet_{timestamp}.csv'
-        
-        # Save to CSV
-        df.to_csv(filename, index=False)
-        print(f"\nData successfully saved to {filename}")
-        
-        return df
-        
-    except requests.exceptions.RequestException as e:
-        print(f"Error occurred while fetching the data: {e}")
-    except Exception as e:
-        print(f"An unexpected error occurred: {e}")
-        import traceback
-        print(traceback.format_exc())
+        while True:
+            print("\nScraping at:", datetime.now())
+            self.scrape_floor_sheet()
+            
+            # Wait for specified interval before next scrape
+            time.sleep(interval)
 
 if __name__ == "__main__":
     # Suppress SSL verification warnings
     import urllib3
     urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
     
-    scrape_floor_sheet()
-#suman tested
+    # Initialize scraper and start continuous scraping
+    scraper = NepseScraper()
+    scraper.continuous_scrape(interval=30)  # Scrape every 60 seconds
