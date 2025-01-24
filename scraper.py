@@ -3,6 +3,9 @@ from bs4 import BeautifulSoup
 import pandas as pd
 import time
 import logging
+# Disable SSL warnings
+import urllib3
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, 
@@ -29,15 +32,23 @@ def scrape_floor_sheet():
             'Upgrade-Insecure-Requests': '1'
         }
         
-        # Send GET request
+        # Send GET request with SSL verification disabled
         logger.info("Sending request to the website...")
-        response = requests.get('https://nepalstock.com/floor-sheet', headers=headers, timeout=10)
+        response = requests.get('https://nepalstock.com/floor-sheet', 
+                                headers=headers, 
+                                verify=False,  # Disable SSL verification
+                                timeout=10)
         
         # Check if request was successful
         response.raise_for_status()
         
         logger.info(f"Request status code: {response.status_code}")
         logger.info(f"Response content length: {len(response.text)} characters")
+        
+        # Save raw HTML for debugging
+        with open('raw_response.html', 'w', encoding='utf-8') as f:
+            f.write(response.text)
+        logger.info("Saved raw HTML response to raw_response.html")
         
         # Parse the HTML
         soup = BeautifulSoup(response.text, 'html.parser')
@@ -46,7 +57,9 @@ def scrape_floor_sheet():
         table = soup.find('table')
         
         if not table:
-            logger.error("No table found on the page. Check the website structure.")
+            logger.error("No table found on the page. Saving full HTML for inspection.")
+            with open('debug_full_page.html', 'w', encoding='utf-8') as f:
+                f.write(soup.prettify())
             return None
         
         # Extract headers
